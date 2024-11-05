@@ -8,7 +8,7 @@ dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const fastify = Fastify(); //instantiate fastify web framework
+const fastify = Fastify();
 fastify.register(fastifyFormbody)
 fastify.register(fastifyWs);
 
@@ -19,7 +19,7 @@ const PORT = 5050
 
 const openaiws= new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
     headers:{
-        "Authorization": "Bearer " + process.env.OPENAI_API_KEY,
+        "Authorization": "Bearer " + OPENAI_API_KEY,
         "OpenAI-Beta": "realtime=v1",
     }
 })
@@ -28,8 +28,9 @@ fastify.get("/", async (request, reply) => {
     reply.send({message : "Twilio Media Stream Server is running"})
 })
 
-//this route returns twiml which is a set of instructions for twilio to follow 
-//also it contains connect tag which connect TwilioMediaStream for this call to websocket endpoint
+//this route returns twiml which is a set of instructions for twilio to follow. This is what user will hear and this is responsible to set up twilio connection to openai
+
+//connect tag which connects TwilioMediaStream for this call to websocket endpoint
 fastify.all("/incoming-call", async (request, reply) => {
 
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
@@ -48,6 +49,7 @@ fastify.all("/incoming-call", async (request, reply) => {
     `;
 })
 
+//this is a fastify plugin that handles a websocket endpoint for the media stream. This is where the audio data is sent and received from the user and openai
 fastify.register(async (fastify) => {
     fastify.get('/media-stream', { websocket: true }, (connection, req) => {
         console.log('Client connected')
@@ -74,13 +76,14 @@ fastify.register(async (fastify) => {
         
         };
 
+        //we wait for the openai connection to be established before sending the session update
         openaiws.on('open', () => {
             console.log("Connected to openai realtime api")
             setTimeout(sendSessionUpdate, 1000) 
         
         })
 
-        //we receive the audio from openai and sending it to Twiliomedia stream and send back to the user
+        //we receive the audio from openai and sending it to Twiliomedia stream to send back to the user
 
         openaiws.on('message',(data)=>{
             try{
@@ -89,6 +92,7 @@ fastify.register(async (fastify) => {
                     console.log("Received session update", response)
 
                 if(response.type === "response.audio.delta" && response.delta){
+                    //when we receive audio from openai, we send it to the user in the format twilio can interpret
                     const audioDelta = {
                         event :"media",
                         streamSid : streamSid,
